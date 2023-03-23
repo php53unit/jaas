@@ -4,14 +4,13 @@
 package cmd
 
 import (
-	jswarm "github.com/alexellis/jaas/pkg/swarm"
-	jtypes "github.com/alexellis/jaas/pkg/types"
+	jswarm "github.com/ffrank/jaas/pkg/swarm"
+	jtypes "github.com/ffrank/jaas/pkg/types"
 	"github.com/spf13/cobra"
 )
 
 var (
 	taskRequest jtypes.TaskRequest
-	verbose     bool
 )
 
 func init() {
@@ -33,7 +32,7 @@ func init() {
 
 	runCmd.PersistentFlags().BoolVarP(&taskRequest.RemoveService, "remove", "r", true, "remove service after running task")
 	runCmd.PersistentFlags().StringVarP(&taskRequest.RegistryAuth, "registry", "a", "", "registry auth string in base64")
-	runCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "b", false, "print verbose debug information")
+	runCmd.PersistentFlags().BoolVarP(&taskRequest.Verbose, "verbose", "b", false, "print verbose debug information")
 }
 
 var runCmd = &cobra.Command{

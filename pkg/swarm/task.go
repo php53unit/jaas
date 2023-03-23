@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	jtypes "github.com/alexellis/jaas/pkg/types"
+	jtypes "github.com/ffrank/jaas/pkg/types"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
@@ -79,6 +80,7 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 
 	if len(taskRequest.RegistryAuth) > 0 {
 		createOptions.EncodedRegistryAuth = taskRequest.RegistryAuth
+		createOptions.QueryRegistry = true
 		fmt.Println("Using RegistryAuth")
 	}
 
@@ -154,11 +156,24 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		spec.TaskTemplate.ContainerSpec.Secrets = append(spec.TaskTemplate.ContainerSpec.Secrets, &secretVal)
 	}
 
-	createResponse, _ := c.ServiceCreate(context.Background(), spec, createOptions)
+	if taskRequest.Verbose {
+		fmt.Printf("Creating service with this spec:\n\t%v\nOptions:\n\t%+v\n", spew.Sdump(spec), createOptions)
+	}
+
+	createResponse, err := c.ServiceCreate(context.Background(), spec, createOptions)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating service: %v\n", err)
+		os.Exit(1)
+	}
 	opts := types.ServiceInspectOptions{InsertDefaults: true}
 
-	service, _, _ := c.ServiceInspectWithRaw(context.Background(), createResponse.ID, opts)
+	service, _, err := c.ServiceInspectWithRaw(context.Background(), createResponse.ID, opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error querying service details for %v: %v\n", createResponse.ID, err)
+		os.Exit(1)
+	}
 	fmt.Printf("Service created: %s (%s)\n", service.Spec.Name, createResponse.ID)
+	fmt.Printf("Warnings:\n%v\n", spew.Sdump(createResponse.Warnings))
 
 	taskExitCode := pollTask(c, createResponse.ID, timeoutVal, taskRequest.ShowLogs, taskRequest.RemoveService)
 	os.Exit(taskExitCode)

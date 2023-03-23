@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/alexellis/jaas/test"
-	"github.com/alexellis/jaas/version"
+	"github.com/ffrank/jaas/test"
+	"github.com/ffrank/jaas/version"
 )
 
 func Test_addVersionDev(t *testing.T) {

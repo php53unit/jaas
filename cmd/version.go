@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/alexellis/jaas/version"
+	"github.com/ffrank/jaas/version"
 	"github.com/morikuni/aec"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +29,7 @@ var versionCmd = &cobra.Command{
 	Long: fmt.Sprintf(`The version command returns the current clients version information.
 
 This currently consists of the GitSHA from which the client was built.
-- https://github.com/alexellis/jaas/tree/%s`, version.GitCommit),
+- https://github.com/ffrank/jaas/tree/%s`, version.GitCommit),
 	Example: `  jaas version
   jaas version --short-version`,
 	Run: runVersion,
