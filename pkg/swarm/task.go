@@ -345,7 +345,7 @@ func showTasks(c *client.Client, id string, showLogs, verbose, removeService boo
 		})
 
 		if err != nil {
-			fmt.Printf("Unable to pull service logs.\nError: %s\n", err)
+			fmt.Fprintf(os.Stderr, "Unable to pull service logs.\nError: %s\n", err)
 		} else {
 			defer logRequest.Close()
 			res, _ := ioutil.ReadAll(logRequest)
