@@ -267,8 +267,8 @@ func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, verb
 		for {
 			time.Sleep(500 * time.Millisecond)
 
-			taskExitCode, found := showTasks(c, item.ID, showlogs, verbose, removeService)
-			if found {
+			taskExitCode, done := showTasks(c, item.ID, showlogs, verbose, removeService)
+			if done {
 				exitCode = taskExitCode
 				break
 			}
@@ -292,81 +292,80 @@ func showTasks(c *client.Client, id string, showLogs, verbose, removeService boo
 	})
 
 	exitCode := 1
-	var done bool
 	stopStates := []swarm.TaskState{
 		swarm.TaskStateComplete,
 		swarm.TaskStateFailed,
 		swarm.TaskStateRejected,
 	}
 
-	for _, task := range tasks {
-
-		stop := false
+	stop := false
+	task := swarm.Task{}
+	for _, t := range tasks {
 		for _, stopState := range stopStates {
-			if task.Status.State == stopState {
+			if t.Status.State == stopState {
 				stop = true
-				break
-			}
-		}
-
-		if stop {
-			if verbose {
-				fmt.Printf("\n\n")
-				fmt.Printf("Exit code: %d\n", task.Status.ContainerStatus.ExitCode)
-				fmt.Printf("State: %s\n", task.Status.State)
-				fmt.Printf("\n\n")
-			}
-
-			exitCode = task.Status.ContainerStatus.ExitCode
-
-			if exitCode == 0 && task.Status.State == swarm.TaskStateRejected {
-				exitCode = 255 // force non-zero exit for task rejected
-			}
-
-			if showLogs {
-				if verbose {
-					fmt.Println("Printing service logs")
-				}
-
-				logRequest, err := c.ServiceLogs(context.Background(), id, types.ContainerLogsOptions{
-					Follow:     false,
-					ShowStdout: true,
-					ShowStderr: true,
-					Timestamps: verbose,
-					Details:    false,
-					Tail:       "all",
-				})
-
-				if err != nil {
-					fmt.Printf("Unable to pull service logs.\nError: %s\n", err)
-				} else {
-					defer logRequest.Close()
-					res, _ := ioutil.ReadAll(logRequest)
-					fmt.Print(string(res[:]))
-					if verbose {
-						fmt.Println("")
-					}
-				}
-			}
-
-			if removeService {
-				if verbose {
-					fmt.Println("Removing service...")
-				}
-				if err := c.ServiceRemove(context.Background(), id); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			}
-
-			done = true
-			break
-		} else {
-			if verbose {
-				fmt.Printf(".")
+				task = t
 			}
 		}
 	}
-	return exitCode, done
+
+	if verbose {
+		fmt.Printf(".")
+	}
+
+	if !stop {
+		return exitCode, false
+	}
+
+	if verbose {
+		fmt.Printf("\n\n")
+		fmt.Printf("Exit code: %d\n", task.Status.ContainerStatus.ExitCode)
+		fmt.Printf("State: %s\n", task.Status.State)
+		fmt.Printf("\n\n")
+	}
+
+	exitCode = task.Status.ContainerStatus.ExitCode
+
+	if exitCode == 0 && task.Status.State == swarm.TaskStateRejected {
+		exitCode = 255 // force non-zero exit for task rejected
+	}
+
+	if showLogs {
+		if verbose {
+			fmt.Println("Printing service logs")
+		}
+
+		logRequest, err := c.ServiceLogs(context.Background(), id, types.ContainerLogsOptions{
+			Follow:     false,
+			ShowStdout: true,
+			ShowStderr: true,
+			Timestamps: verbose,
+			Details:    false,
+			Tail:       "all",
+		})
+
+		if err != nil {
+			fmt.Printf("Unable to pull service logs.\nError: %s\n", err)
+		} else {
+			defer logRequest.Close()
+			res, _ := ioutil.ReadAll(logRequest)
+			fmt.Print(string(res[:]))
+			if verbose {
+				fmt.Println("")
+			}
+		}
+	}
+
+	if removeService {
+		if verbose {
+			fmt.Println("Removing service...")
+		}
+		if err := c.ServiceRemove(context.Background(), id); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
+
+	return exitCode, true
 }
 
 func validate(taskRequest jtypes.TaskRequest) error {
