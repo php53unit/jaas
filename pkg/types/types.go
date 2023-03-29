@@ -6,6 +6,7 @@ package types
 // TaskRequest holds options for running a jaas task
 type TaskRequest struct {
 	Verbose     bool
+	Debug       bool
 	Image       string
 	BaseService string
 	Networks    []string

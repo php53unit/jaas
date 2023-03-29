@@ -25,7 +25,7 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		return validationErr
 	}
 
-	if taskRequest.Verbose {
+	if taskRequest.Debug {
 		if taskRequest.BaseService != "" {
 			fmt.Printf("Running based on %s\n", taskRequest.BaseService)
 			fmt.Printf("Listing overrides (if specified) ...\n")
@@ -45,7 +45,7 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		return parseErr
 	}
 
-	if taskRequest.Verbose {
+	if taskRequest.Debug {
 		fmt.Printf("timeout: %s\n", timeoutVal)
 	}
 
@@ -196,7 +196,7 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		}
 	}
 
-	if taskRequest.Verbose {
+	if taskRequest.Debug {
 		fmt.Printf("Creating service with this spec:\n\t%v\nOptions:\n\t%+v\n", spew.Sdump(spec), createOptions)
 	}
 
@@ -211,10 +211,12 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		fmt.Fprintf(os.Stderr, "error querying service details for %v: %v\n", createResponse.ID, err)
 		os.Exit(1)
 	}
-	fmt.Printf("Service created: %s (%s)\n", service.Spec.Name, createResponse.ID)
-	fmt.Printf("Warnings:\n%v\n", spew.Sdump(createResponse.Warnings))
+	if taskRequest.Verbose {
+		fmt.Printf("Service created: %s (%s)\n", service.Spec.Name, createResponse.ID)
+		fmt.Printf("Warnings:\n%v\n", spew.Sdump(createResponse.Warnings))
+	}
 
-	taskExitCode := pollTask(c, createResponse.ID, timeoutVal, taskRequest.ShowLogs, taskRequest.RemoveService)
+	taskExitCode := pollTask(c, createResponse.ID, timeoutVal, taskRequest.ShowLogs, taskRequest.Verbose, taskRequest.RemoveService)
 	os.Exit(taskExitCode)
 	return nil
 }
@@ -244,7 +246,7 @@ func readEnvs(file string) ([]string, error) {
 const swarmError = -999
 const timeoutError = -998
 
-func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, removeService bool) int {
+func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, verbose, removeService bool) int {
 	svcFilters := filters.NewArgs()
 	svcFilters.Add("id", id)
 
@@ -259,18 +261,20 @@ func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, remo
 		start := time.Now()
 		end := start.Add(timeout)
 
-		fmt.Println("ID: ", item.ID, " Update at: ", item.UpdatedAt)
+		if verbose {
+			fmt.Println("ID: ", item.ID, " Update at: ", item.UpdatedAt)
+		}
 		for {
 			time.Sleep(500 * time.Millisecond)
 
-			taskExitCode, found := showTasks(c, item.ID, showlogs, removeService)
+			taskExitCode, found := showTasks(c, item.ID, showlogs, verbose, removeService)
 			if found {
 				exitCode = taskExitCode
 				break
 			}
 			now := time.Now()
 			if now.After(end) {
-				fmt.Printf("Timing out after %s.", timeout.String())
+				fmt.Fprintln(os.Stderr, "Timing out after %s.", timeout.String())
 				return timeoutError
 			}
 		}
@@ -279,7 +283,7 @@ func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, remo
 	return exitCode
 }
 
-func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, bool) {
+func showTasks(c *client.Client, id string, showLogs, verbose, removeService bool) (int, bool) {
 	filters1 := filters.NewArgs()
 	filters1.Add("service", id)
 
@@ -306,10 +310,12 @@ func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, 
 		}
 
 		if stop {
-			fmt.Printf("\n\n")
-			fmt.Printf("Exit code: %d\n", task.Status.ContainerStatus.ExitCode)
-			fmt.Printf("State: %s\n", task.Status.State)
-			fmt.Printf("\n\n")
+			if verbose {
+				fmt.Printf("\n\n")
+				fmt.Printf("Exit code: %d\n", task.Status.ContainerStatus.ExitCode)
+				fmt.Printf("State: %s\n", task.Status.State)
+				fmt.Printf("\n\n")
+			}
 
 			exitCode = task.Status.ContainerStatus.ExitCode
 
@@ -318,15 +324,15 @@ func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, 
 			}
 
 			if showLogs {
-				fmt.Println("Printing service logs")
-			}
+				if verbose {
+					fmt.Println("Printing service logs")
+				}
 
-			if showLogs {
 				logRequest, err := c.ServiceLogs(context.Background(), id, types.ContainerLogsOptions{
 					Follow:     false,
 					ShowStdout: true,
 					ShowStderr: true,
-					Timestamps: true,
+					Timestamps: verbose,
 					Details:    false,
 					Tail:       "all",
 				})
@@ -335,16 +341,18 @@ func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, 
 					fmt.Printf("Unable to pull service logs.\nError: %s\n", err)
 				} else {
 					defer logRequest.Close()
-
-					//	, ShowStderr: true, ShowStdout: true})
 					res, _ := ioutil.ReadAll(logRequest)
-
-					fmt.Println(string(res[:]))
+					fmt.Print(string(res[:]))
+					if verbose {
+						fmt.Println("")
+					}
 				}
 			}
 
 			if removeService {
-				fmt.Println("Removing service...")
+				if verbose {
+					fmt.Println("Removing service...")
+				}
 				if err := c.ServiceRemove(context.Background(), id); err != nil {
 					fmt.Fprintln(os.Stderr, err)
 				}
@@ -353,7 +361,9 @@ func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, 
 			done = true
 			break
 		} else {
-			fmt.Printf(".")
+			if verbose {
+				fmt.Printf(".")
+			}
 		}
 	}
 	return exitCode, done

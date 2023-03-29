@@ -33,7 +33,8 @@ func init() {
 
 	runCmd.PersistentFlags().BoolVarP(&taskRequest.RemoveService, "remove", "r", true, "remove service after running task")
 	runCmd.PersistentFlags().StringVarP(&taskRequest.RegistryAuth, "registry", "a", "", "registry auth string in base64")
-	runCmd.PersistentFlags().BoolVarP(&taskRequest.Verbose, "verbose", "v", false, "print verbose debug information")
+	runCmd.PersistentFlags().BoolVarP(&taskRequest.Verbose, "verbose", "v", false, "print verbose processing information")
+	runCmd.PersistentFlags().BoolVarP(&taskRequest.Debug, "debug", "u", false, "print debug information")
 }
 
 var runCmd = &cobra.Command{
