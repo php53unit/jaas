@@ -75,31 +75,31 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		}
 	}
 
+	inspect_opts := types.ServiceInspectOptions{InsertDefaults: true}
 	spec := swarm.ServiceSpec{}
-	if taskRequest.BaseService == "" {
-		spec = makeSpec(taskRequest.Image, taskRequest.EnvVars)
-	} else {
-		baseService, _, err := c.ServiceInspectWithRaw(
-							context.Background(),
-							taskRequest.BaseService,
-							types.ServiceInspectOptions{InsertDefaults: true})
+
+	if taskRequest.BaseService != "" {
+		baseService, _, err := c.ServiceInspectWithRaw(context.Background(), taskRequest.BaseService, inspect_opts)
 		if err != nil {
 			return fmt.Errorf("Error looking up base service %s: %v\n", taskRequest.BaseService, err)
 		}
-		spec = swarm.ServiceSpec{
-			TaskTemplate: baseService.Spec.TaskTemplate,
-		}
-		max := uint64(1)
-		spec.TaskTemplate.RestartPolicy = &swarm.RestartPolicy{
-			MaxAttempts: &max,
-			Condition:   swarm.RestartPolicyConditionNone,
-		}
-		if taskRequest.Image != "" {
-			spec.TaskTemplate.ContainerSpec.Image = taskRequest.Image
-		}
-		if len(taskRequest.EnvVars) > 0 {
-			spec.TaskTemplate.ContainerSpec.Env = taskRequest.EnvVars
-		}
+		spec.TaskTemplate = baseService.Spec.TaskTemplate
+	} else {
+		spec.TaskTemplate = swarm.TaskSpec{ ContainerSpec: &swarm.ContainerSpec{}, }
+	}
+
+	max := uint64(1)
+	spec.TaskTemplate.RestartPolicy = &swarm.RestartPolicy{
+		MaxAttempts: &max,
+		Condition:   swarm.RestartPolicyConditionNone,
+	}
+
+	if taskRequest.Image != "" {
+		spec.TaskTemplate.ContainerSpec.Image = taskRequest.Image
+	}
+
+	if len(taskRequest.EnvVars) > 0 {
+		spec.TaskTemplate.ContainerSpec.Env = taskRequest.EnvVars
 	}
 
 	if len(taskRequest.Networks) > 0 {
@@ -205,9 +205,8 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		fmt.Fprintf(os.Stderr, "error creating service: %v\n", err)
 		os.Exit(1)
 	}
-	opts := types.ServiceInspectOptions{InsertDefaults: true}
 
-	service, _, err := c.ServiceInspectWithRaw(context.Background(), createResponse.ID, opts)
+	service, _, err := c.ServiceInspectWithRaw(context.Background(), createResponse.ID, inspect_opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error querying service details for %v: %v\n", createResponse.ID, err)
 		os.Exit(1)
@@ -218,24 +217,6 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 	taskExitCode := pollTask(c, createResponse.ID, timeoutVal, taskRequest.ShowLogs, taskRequest.RemoveService)
 	os.Exit(taskExitCode)
 	return nil
-}
-
-func makeSpec(image string, envVars []string) swarm.ServiceSpec {
-	max := uint64(1)
-
-	spec := swarm.ServiceSpec{
-		TaskTemplate: swarm.TaskSpec{
-			RestartPolicy: &swarm.RestartPolicy{
-				MaxAttempts: &max,
-				Condition:   swarm.RestartPolicyConditionNone,
-			},
-			ContainerSpec: &swarm.ContainerSpec{
-				Image: image,
-				Env:   envVars,
-			},
-		},
-	}
-	return spec
 }
 
 func readEnvs(file string) ([]string, error) {
