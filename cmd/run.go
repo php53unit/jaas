@@ -17,6 +17,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 
 	runCmd.PersistentFlags().StringVarP(&taskRequest.Image, "image", "i", "", "Docker image to run")
+	runCmd.PersistentFlags().StringVarP(&taskRequest.BaseService, "base", "b", "", "service to base your task on")
 	runCmd.PersistentFlags().StringArrayVarP(&taskRequest.Networks, "network", "n", []string{}, "provide a network to bind to")
 	runCmd.PersistentFlags().StringArrayVarP(&taskRequest.Constraints, "constraint", "c", []string{}, "constraint for task")
 	runCmd.PersistentFlags().StringArrayVarP(&taskRequest.EnvVars, "env", "e", []string{}, "environmental variable for task")
@@ -32,7 +33,7 @@ func init() {
 
 	runCmd.PersistentFlags().BoolVarP(&taskRequest.RemoveService, "remove", "r", true, "remove service after running task")
 	runCmd.PersistentFlags().StringVarP(&taskRequest.RegistryAuth, "registry", "a", "", "registry auth string in base64")
-	runCmd.PersistentFlags().BoolVarP(&taskRequest.Verbose, "verbose", "b", false, "print verbose debug information")
+	runCmd.PersistentFlags().BoolVarP(&taskRequest.Verbose, "verbose", "v", false, "print verbose debug information")
 }
 
 var runCmd = &cobra.Command{

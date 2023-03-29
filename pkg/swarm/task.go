@@ -26,11 +26,18 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 	}
 
 	if taskRequest.Verbose {
+		if taskRequest.BaseService != "" {
+			fmt.Printf("Running based on %s\n", taskRequest.BaseService)
+			fmt.Printf("Listing overrides (if specified) ...\n")
+		}
 		fmt.Printf("Running.. OK %s\n", taskRequest.Image)
 		fmt.Printf("Connected to.. OK %s\n", taskRequest.Networks)
 		fmt.Printf("Constraints: %s\n", taskRequest.Constraints)
 		fmt.Printf("envVars: %s\n", taskRequest.EnvVars)
 		fmt.Printf("Secrets: %s\n", taskRequest.Secrets)
+		if taskRequest.BaseService != "" {
+			fmt.Printf("... end overrides\n")
+		}
 	}
 
 	timeoutVal, parseErr := time.ParseDuration(taskRequest.Timeout)
@@ -68,7 +75,33 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		}
 	}
 
-	spec := makeSpec(taskRequest.Image, taskRequest.EnvVars)
+	spec := swarm.ServiceSpec{}
+	if taskRequest.BaseService == "" {
+		spec = makeSpec(taskRequest.Image, taskRequest.EnvVars)
+	} else {
+		baseService, _, err := c.ServiceInspectWithRaw(
+							context.Background(),
+							taskRequest.BaseService,
+							types.ServiceInspectOptions{InsertDefaults: true})
+		if err != nil {
+			return fmt.Errorf("Error looking up base service %s: %v\n", taskRequest.BaseService, err)
+		}
+		spec = swarm.ServiceSpec{
+			TaskTemplate: baseService.Spec.TaskTemplate,
+		}
+		max := uint64(1)
+		spec.TaskTemplate.RestartPolicy = &swarm.RestartPolicy{
+			MaxAttempts: &max,
+			Condition:   swarm.RestartPolicyConditionNone,
+		}
+		if taskRequest.Image != "" {
+			spec.TaskTemplate.ContainerSpec.Image = taskRequest.Image
+		}
+		if len(taskRequest.EnvVars) > 0 {
+			spec.TaskTemplate.ContainerSpec.Env = taskRequest.EnvVars
+		}
+	}
+
 	if len(taskRequest.Networks) > 0 {
 		nets := []swarm.NetworkAttachmentConfig{
 			swarm.NetworkAttachmentConfig{Target: taskRequest.Networks[0]},
@@ -108,52 +141,59 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 		}
 	}
 
-	spec.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{}
-	for _, bindMount := range taskRequest.Mounts {
-		parts := strings.Split(bindMount, "=")
-		if len(parts) < 2 || len(parts) > 2 {
-			fmt.Fprintf(os.Stderr, "Bind-mounts must be specified as: src=dest, i.e. --mount /home/alex/tmp/=/tmp/\n")
-			os.Exit(1)
-		}
-
-		if len(parts) == 2 {
-			mountVal := mount.Mount{
-				Source: parts[0],
-				Target: parts[1],
+	if len(taskRequest.Mounts) > 0 {
+		spec.TaskTemplate.ContainerSpec.Mounts = []mount.Mount{}
+		for _, bindMount := range taskRequest.Mounts {
+			parts := strings.Split(bindMount, "=")
+			if len(parts) < 2 || len(parts) > 2 {
+				fmt.Fprintf(os.Stderr, "Bind-mounts must be specified as: src=dest, i.e. --mount /home/alex/tmp/=/tmp/\n")
+				os.Exit(1)
 			}
 
-			spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, mountVal)
+			if len(parts) == 2 {
+				mountVal := mount.Mount{
+					Source: parts[0],
+					Target: parts[1],
+				}
+
+				spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, mountVal)
+			}
 		}
 	}
 
-	secretList, err := c.SecretList(context.Background(), types.SecretListOptions{})
+	if len(taskRequest.Secrets) > 0 {
+		secretList, err := c.SecretList(context.Background(), types.SecretListOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to look up docker secrets")
+		}
 
-	spec.TaskTemplate.ContainerSpec.Secrets = []*swarm.SecretReference{}
-	for _, serviceSecret := range taskRequest.Secrets {
-		var secretID string
-		for _, s := range secretList {
-			if serviceSecret == s.Spec.Annotations.Name {
-				secretID = s.ID
-				break
+		spec.TaskTemplate.ContainerSpec.Secrets = []*swarm.SecretReference{}
+		for _, serviceSecret := range taskRequest.Secrets {
+			var secretID string
+			for _, s := range secretList {
+				if serviceSecret == s.Spec.Annotations.Name {
+					secretID = s.ID
+					break
+				}
 			}
-		}
-		if secretID == "" {
-			fmt.Fprintf(os.Stderr, "No existing secret has name that matches %s\n", serviceSecret)
-			os.Exit(1)
-		}
+			if secretID == "" {
+				fmt.Fprintf(os.Stderr, "No existing secret has name that matches %s\n", serviceSecret)
+				os.Exit(1)
+			}
 
-		secretVal := swarm.SecretReference{
-			File: &swarm.SecretReferenceFileTarget{
-				Name: serviceSecret,
-				UID:  "0",
-				GID:  "0",
-				Mode: os.FileMode(0444), // File can be read by any user inside the container
-			},
-			SecretName: serviceSecret,
-			SecretID:   secretID,
-		}
+			secretVal := swarm.SecretReference{
+				File: &swarm.SecretReferenceFileTarget{
+					Name: serviceSecret,
+					UID:  "0",
+					GID:  "0",
+					Mode: os.FileMode(0444), // File can be read by any user inside the container
+				},
+				SecretName: serviceSecret,
+				SecretID:   secretID,
+			}
 
-		spec.TaskTemplate.ContainerSpec.Secrets = append(spec.TaskTemplate.ContainerSpec.Secrets, &secretVal)
+			spec.TaskTemplate.ContainerSpec.Secrets = append(spec.TaskTemplate.ContainerSpec.Secrets, &secretVal)
+		}
 	}
 
 	if taskRequest.Verbose {
@@ -339,8 +379,8 @@ func showTasks(c *client.Client, id string, showLogs, removeService bool) (int, 
 }
 
 func validate(taskRequest jtypes.TaskRequest) error {
-	if len(taskRequest.Image) == 0 {
-		return fmt.Errorf("must a valid supply --image")
+	if len(taskRequest.BaseService) == 0 && len(taskRequest.Image) == 0 {
+		return fmt.Errorf("must supply a valid --image, unless --base is used")
 	}
 	return nil
 }

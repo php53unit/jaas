@@ -7,6 +7,7 @@ package types
 type TaskRequest struct {
 	Verbose     bool
 	Image       string
+	BaseService string
 	Networks    []string
 	Constraints []string
 	EnvVars     []string
