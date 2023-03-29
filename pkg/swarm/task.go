@@ -265,7 +265,7 @@ func pollTask(c *client.Client, id string, timeout time.Duration, showlogs, verb
 			fmt.Println("ID: ", item.ID, " Update at: ", item.UpdatedAt)
 		}
 		for {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 
 			taskExitCode, done := showTasks(c, item.ID, showlogs, verbose, removeService)
 			if done {
