@@ -332,40 +332,7 @@ func showTasks(c *client.Client, id string, showLogs, verbose, removeService boo
 	}
 
 	if showLogs {
-		if verbose {
-			fmt.Println("Printing service logs")
-		}
-
-		logRequest, err := c.ServiceLogs(context.Background(), id, types.ContainerLogsOptions{
-			Follow:     false,
-			ShowStdout: true,
-			ShowStderr: true,
-			Timestamps: verbose,
-			Details:    false,
-			Tail:       "all",
-		})
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to pull service logs.\nError: %s\n", err)
-		} else {
-			defer logRequest.Close()
-			header := make([]byte, 8)
-			_, err = logRequest.Read(header)
-
-			if header[1] + header[2] + header[3] > 0 {
-				fmt.Printf("%s", string(header))
-				_, err = io.Copy(os.Stdout, logRequest)
-				if err != nil && err != io.EOF {
-					fmt.Fprintf(os.Stderr, "Streaming error from service logs.\nError: %s\n", err)
-				}
-			} else {
-				demuxRead(header, logRequest)
-			}
-
-			if verbose {
-				fmt.Println("")
-			}
-		}
+		showServiceLogs(c, id, verbose)
 	}
 
 	if removeService {
@@ -387,8 +354,47 @@ func validate(taskRequest jtypes.TaskRequest) error {
 	return nil
 }
 
-func demuxRead(header []byte, reader io.Reader) {
-	for true {
+func showServiceLogs(c *client.Client, id string, verbose bool) {
+	if verbose {
+		fmt.Println("Printing service logs")
+	}
+
+	logRequest, err := c.ServiceLogs(context.Background(), id, types.ContainerLogsOptions{
+		Follow:     false,
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: verbose,
+		Details:    false,
+		Tail:       "all",
+	})
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to pull service logs.\nError: %s\n", err)
+		return
+	}
+
+	defer logRequest.Close()
+	header := make([]byte, 8)
+	_, err = logRequest.Read(header)
+
+	if header[1] + header[2] + header[3] > 0 {
+		fmt.Printf("%s", string(header))
+		_, err = io.Copy(os.Stdout, logRequest)
+	} else {
+		err = demuxRead(header, logRequest)
+	}
+	if err != nil && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "Streaming error from service logs.\nError: %s\n", err)
+	}
+	if verbose {
+		fmt.Println("")
+	}
+}
+
+
+func demuxRead(header []byte, reader io.Reader) error {
+	var err error = nil
+	for err == nil {
 		stream := header[0]
 		size := header[4]<<24 +
 			header[5]<<16 +
@@ -396,9 +402,10 @@ func demuxRead(header []byte, reader io.Reader) {
 			header[7]
 		payload := make([]byte, size)
 
-		bytes, err := reader.Read(payload)
+		var bytes int
+		bytes, err = reader.Read(payload)
 		if err != nil && err.Error() != "EOF" {
-			log.Fatal(err)
+			return err
 		}
 
 		if stream == 1 {
@@ -409,10 +416,8 @@ func demuxRead(header []byte, reader io.Reader) {
 
 		bytes, err = reader.Read(header)
 		if bytes == 0 {
-			return
-		}
-		if err != nil {
-			log.Fatal(err)
+			return nil
 		}
 	}
+	return err
 }
