@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -348,8 +349,19 @@ func showTasks(c *client.Client, id string, showLogs, verbose, removeService boo
 			fmt.Fprintf(os.Stderr, "Unable to pull service logs.\nError: %s\n", err)
 		} else {
 			defer logRequest.Close()
-			res, _ := ioutil.ReadAll(logRequest)
-			fmt.Print(string(res[:]))
+			header := make([]byte, 8)
+			_, err = logRequest.Read(header)
+
+			if header[1] + header[2] + header[3] > 0 {
+				fmt.Printf("%s", string(header))
+				_, err = io.Copy(os.Stdout, logRequest)
+				if err != nil && err != io.EOF {
+					fmt.Fprintf(os.Stderr, "Streaming error from service logs.\nError: %s\n", err)
+				}
+			} else {
+				demuxRead(header, logRequest)
+			}
+
 			if verbose {
 				fmt.Println("")
 			}
@@ -373,4 +385,34 @@ func validate(taskRequest jtypes.TaskRequest) error {
 		return fmt.Errorf("must supply a valid --image, unless --base is used")
 	}
 	return nil
+}
+
+func demuxRead(header []byte, reader io.Reader) {
+	for true {
+		stream := header[0]
+		size := header[4]<<24 +
+			header[5]<<16 +
+			header[6]<<8 +
+			header[7]
+		payload := make([]byte, size)
+
+		bytes, err := reader.Read(payload)
+		if err != nil && err.Error() != "EOF" {
+			log.Fatal(err)
+		}
+
+		if stream == 1 {
+			fmt.Printf("%s", string(payload))
+		} else if stream == 2 {
+			fmt.Fprintf(os.Stderr, string(payload))
+		}
+
+		bytes, err = reader.Read(header)
+		if bytes == 0 {
+			return
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
