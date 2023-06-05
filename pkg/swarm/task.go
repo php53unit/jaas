@@ -78,6 +78,7 @@ func RunTask(taskRequest jtypes.TaskRequest) error {
 
 	inspect_opts := types.ServiceInspectOptions{InsertDefaults: true}
 	spec := swarm.ServiceSpec{}
+	spec.Labels = map[string]string{"telegram-notifier.monitor": "false"}
 
 	if taskRequest.BaseService != "" {
 		baseService, _, err := c.ServiceInspectWithRaw(context.Background(), taskRequest.BaseService, inspect_opts)

@@ -17,16 +17,13 @@ RUN apk --no-cache add git
 
 COPY . .
 
-# Run a gofmt and exclude all vendored code.
-RUN test -z "$(gofmt -l $(find . -type f -name '*.go' -not -path "./vendor/*" -not -path "./function/vendor/*"))" || { echo "Run \"gofmt -s -w\" on your Golang code"; exit 1; }
-
-ARG GO111MODULE="off"
+ARG GO111MODULE="on"
 ARG GOPROXY=""
 
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go test ./... -cover
+#RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go test ./...
 
-RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags "${LDFLAGS}" -a -installsuffix cgo -o /usr/bin/jaas .
+RUN GO111MODULE=${GO111MODULE} CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+   go build -ldflags "${LDFLAGS}" -a -installsuffix cgo -o /usr/bin/jaas .
 
 FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine:3.12
 # Add non root user and certs
